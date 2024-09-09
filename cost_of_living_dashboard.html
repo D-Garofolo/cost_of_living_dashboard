@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang = "en">
+   <head>
+        <script src = "https://d3js.org/d3.v4.min.js"></script>
+        <script src = "https://d3js.org/topojson.v3.min.js"></script>
+        <style>
+            header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                color: white;
+                font-family: Arial;
+                border-bottom: 15px;
+            }
+            .radio {
+                font-size:12px;
+            }
+            body {
+                background-color: #383434;
+            }
+            .axis line {
+                stroke: white;
+            }
+            .axis path {
+                stroke: white;
+            }
+            .sliderinside {
+                display: flex;
+                align-items: center;
+                color: white;
+                font-size:12px;
+            }
+            .scatterradio {
+                display: flex;
+                align-items: center;
+            }
+        </style>
+   </head>
+
+   <body onload="loaddata(event)">
+        <header>
+            <div><b>Cost of Living Across America</b></div>
+            <select name="attributes" id="attributes" onchange="changeValues(event)" class="child">
+                <option value="housing_cost">Yearly Housing Cost</option>
+                <option value="median_family_income">Median Family Income</option>
+                <option value="state">State</option>
+                <option value="isMetro">Metro Area</option>
+                <option value="parent_count">Number of Adults</option>
+                <option value="child_count">Number of Children</option>
+                <option value="food_cost">Yearly Food Cost</option>
+                <option value="transportation_cost">Yearly Transportation Cost</option>
+                <option value="healthcare_cost">Yearly Healthcare Cost</option>
+                <option value="other_necessities_cost">Yearly Other Necessities Cost</option>
+                <option value="childcare_cost">Yearly Childcare Cost</option>
+                <option value="taxes">Yearly Average Taxes</option>
+                <option value="total_cost">Yearly Total Necessities Cost</option>
+            </select>
+            <div class="radio">
+                <div>
+                    <input type="radio" id="PCP" name="visualization" checked onchange="changeValues(event)"/>
+                    <label>PCP</label>
+                </div>
+                <div>
+                    <input type="radio" id="Map" name="visualization" onchange="changeValues(event)"/>
+                    <label>Map</label>
+                </div>
+            </div>
+            <div class="radio">
+                <div>
+                    <input type="radio" id="Histogram" name="visualization" onchange="changeValues(event)"/>
+                    <label>Histogram</label>
+                </div>
+                <div>
+                    <input type="radio" id="Scatterplot" name="visualization" onchange="changeValues(event)"/>
+                    <label>Scatterplot</label>
+                </div>
+            </div>
+            <div class="slider">
+                <div class="sliderinside">
+                    <label># of Parents:</label>
+                    <input type="range" id="parentslider" min="1" max="2" value="1" onChange="changeParents(event)">
+                    <label id="numParents">1</label>
+                </div>
+                <div class="sliderinside">
+                    <label># of Children:</label>
+                    <input type="range" id="childslider" min="0" max="4" value="0" onChange="changeChildren(event)">
+                    <label id="numChildren">0</label>
+                </div>
+            </div>
+            <div>
+                <label>
+                    <input type="checkbox" id="incomeCheckbox" unchecked onChange="changeDivide(event)">
+                    % of Income
+                </label>
+                <div class="scatterradio">
+                    <div class="sliderinside">
+                        <label>Scatterplot:</label>
+                        <input type="radio" id="X" name="scatter" checked/>
+                        <label>X</label>
+                    </div>
+                    <div class="sliderinside">
+                        <input type="radio" id="Y" name="scatter"/>
+                        <label>Y</label>
+                    </div>
+                </div>
+            </div>
+            <button onclick="reset(event)">Reset display</button>
+        </header>
+        <script type="text/javascript">
+            let dashboard_data = {};
+            let full_data = {};
+            let k_of_interest = 3;
+            let column_of_interest = 'k_means_cluster_4';
+            let color_wheel = ['#00ffa5', '#00ffff', '#0075ff', '#bf00ff', '#ff00bf', '#ff8a00', '#00ffff', '#ff97e9', '#ffff7b', '#7e7e7e'];
+            let pcp_labels = ['housing_cost', 'food_cost',  'childcare_cost', 'total_cost', 'median_family_income'];
+            let attr_to_name = new Map([['housing_cost', 'Housing Cost'], ['food_cost', 'Food Cost'], ['childcare_cost', 'Childcare Cost'], ['total_cost', 'Total Cost'], ['median_family_income', 'Median Income'], ['isMetro', 'City Area?'], ['state', 'State'], ['parent_count', '# Parents'], ['child_count', '# Children'], ['transportation_cost', 'Transport Cost'], ['Healthcare Cost', 'Health Cost'], ['taxes', 'Taxes'], ['other_necessities_cost', 'Other Cost']]);
+            let pcp_init_x = 0;
+            let pcp_change_in_x = 0;
+            let state_map = {'AL':1,'AK':2,'AZ':3,'AR':4,'CA':5,'CO':6,'CT':7,'DE':8,'FL':9,'GA':10,'HI':11,'ID':12,'IL':13,'IN':14,'IA':15,'KS':16,'KY':17,'LA':18,'ME':19,'MD':20,'MA':21,'MI':22,'MN':23,'MS':24,'MO':25,'MT':26,'NE':27,'NV':28,'NH':29,'NJ':30,'NM':31,'NY':32,'NC':33,'ND':34,'OH':35,'OK':36,'OR':37,'PA':38,'RI':39,'SC':40,'SD':41,'TN':42,'TX':43,'UT':44,'VT':45,'VA':46,'WA':47,'WV':48,'WI':49,'WY':50};
+            let states = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
+            let is_numeric = [false, true, true, true, true, true, true, true, true, true, true];
+            let max_data = [0, 0, 0, 0, 0];
+            let cluster_of_interest = -1;
+            let FIPS_of_interest = new Set();
+            let histo_of_interest = -1;
+            let histo_FIPS = new Set();
+            let divide_by_income = false;
+            let curr_name = 'housing_cost';
+            let curr_attr = 'housing_cost';
+            let num_of_parents = 1;
+            let num_of_children = 0;
+            let brush_FIPS = new Set();
+
+
+            let x_data = [];
+            let x_name = 'housing_cost';
+            let x_max = 0;
+            let x_idx = -1;
+            let y_data = [];
+            let y_name = 'total_cost';
+            let y_max = 0;
+            let y_idx = -1;
+            let scaled = false;
+
+            function drawVisualizations(e) {
+                d3.selectAll("svg").remove();
+
+                let screen_height = window.innerHeight - 70;
+                let screen_width = window.innerWidth;
+
+                let pcp = d3.select("body")
+                            .append("svg")
+                            .attr("width", screen_width / 2)
+                            .attr("height", screen_height / 2)
+
+                let mds_min_x = 0;
+                let mds_max_x = 0;
+                let mds_min_y = 0;
+                let mds_max_y = 0;
+
+                dashboard_data.forEach((data) => {
+                    for (let i = 0; i < pcp_labels.length; i++) {
+                        if (pcp_labels[i] !== 'state') {
+                            max_data[i] = Math.max(max_data[i], data[pcp_labels[i]]);
+                        }
+                        mds_min_x = Math.min(mds_min_x, data['mds_x']);
+                        mds_max_x = Math.max(mds_max_x, data['mds_x']);
+                        mds_min_y = Math.min(mds_min_y, data['mds_y']);
+                        mds_max_y = Math.max(mds_max_y, data['mds_y']);
+                    }
+                });
+
+                let axis_mapping = new Map();
+                console.log(histo_FIPS);
+
+                for (let i = 0; i < pcp_labels.length; i++) {
+                    if (pcp_labels[i] !== 'state') {
+                        let y = d3.scaleLinear()
+                                    .domain([0, max_data[i]])
+                                    .range([(screen_height / 2) - 100, 0]);
+
+                        let yaxis = d3.axisLeft()
+                                    .scale(y)
+                                    .ticks(10);
+
+                        let axis_transform = pcp.append("g")
+                        .attr("transform", "translate("+ ((((screen_width / 2) - 200)/(pcp_labels.length - 1))*i + 100) +", 50)")
+                        .attr("class", "axis")
+                        .call(yaxis);
+                        
+                        axis_mapping.set(i, axis_transform);
+                    }
+                    else {
+                        let y = d3.scalePoint()
+                                .domain(states)
+                                .range([(screen_height / 2) - 100, 0]);
+
+                        let yaxis = d3.axisLeft()
+                                    .scale(y);
+
+                        let axis_transform = pcp.append("g")
+                        .attr("transform", "translate("+ ((((screen_width / 2) - 200)/(pcp_labels.length - 1))*i + 100) +", 50)")
+                        .attr("class", "axis")
+                        .call(yaxis);
+                        
+                        axis_mapping.set(i, axis_transform);
+                    }
+                }
+
+                let pcp_handles = pcp.selectAll('dot')
+                    .data(pcp_labels)
+                    .enter()
+                    .append("circle")
+                    .attr("cx", function (d, i) {
+                        return 100 + (((screen_width / 2) - 200)/(pcp_labels.length - 1))*i;
+                    })
+                    .attr("cy", (screen_height / 2) - 50)
+                    .attr("r", 6)
+                    .style("fill", "white")
+                    .call(d3.drag()
+                            .on("start", function() {
+                                pcp_init_x = event.x;
+                            })
+                            .on("drag", function(d, i) {
+                                pcp_change_in_x = event.x - pcp_init_x;
+                                d3.select(this)
+                                    .attr("cx", pcp_init_x + pcp_change_in_x);
+                                
+                                axis_mapping.get(i)
+                                    .attr("transform", "translate("+ (pcp_init_x + pcp_change_in_x) +", 50)");
+                            })
+                            .on("end", function(d, i) {
+                                let change_in_i = Math.round(pcp_change_in_x / (((screen_width / 2) - 200)/(pcp_labels.length - 1)));
+                                let newIndex = i + change_in_i;
+                                if (change_in_i < 0) {
+                                    pcp_labels.splice(newIndex, 0, pcp_labels[i]);
+                                    pcp_labels.splice(i+1, 1);
+                                    is_numeric.splice(newIndex, 0, is_numeric[i]);
+                                    is_numeric.splice(i+1, 1);
+                                    max_data.splice(newIndex, 0, max_data[i]);
+                                    max_data.splice(i+1, 1);
+                                }
+                                else {
+                                    pcp_labels.splice(newIndex + 1, 0, pcp_labels[i]);
+                                    pcp_labels.splice(i, 1);
+                                    is_numeric.splice(newIndex + 1, 0, is_numeric[i]);
+                                    is_numeric.splice(i, 1);
+                                    max_data.splice(newIndex + 1, 0, max_data[i]);
+                                    max_data.splice(i, 1);
+                                }
+                                pcp_init_x = 0;
+                                pcp_change_in_x = 0;
+                                drawVisualizations(e);
+                            }))
+                            .on("contextmenu", function(d, i) {
+                                pcp_labels.splice(i, 1);
+                                max_data.splice(i, 1);
+                                console.log(pcp_labels);
+                                drawVisualizations(event);
+                            });
+
+                for (let i = 0; i < pcp_labels.length - 1; i++) {
+                    pcp_data = [];
+                    dashboard_data.forEach((data) => {
+                        pcp_data.push([data[pcp_labels[i]], data[pcp_labels[i+1]]]);
+                    });
+
+                    pcp.selectAll()
+                    .data(pcp_data)
+                    .enter()
+                    .append("line")
+                    .style("stroke", function(d,i) {
+                        return color_wheel[dashboard_data[i][column_of_interest]];
+                    })
+                    .style("stroke-width", "1")
+                    .style("stroke-opacity", function(d,i) {
+                        if (histo_of_interest != -1) {
+                            if (histo_FIPS.has(dashboard_data[i]['fips'])) {
+                                return 1;
+                            }
+                            else {
+                                return 0.02;
+                            }
+                        }
+                        if (cluster_of_interest != -1) {
+                            if (dashboard_data[i][column_of_interest] == cluster_of_interest) {
+                                return 1;
+                            }
+                            else {
+                                return 0.02;
+                            }
+                        }
+                        else {
+                            if (FIPS_of_interest.size > 0 && !FIPS_of_interest.has(dashboard_data[i]['fips'])) {
+                                return 0.02;
+                            }
+                            return 1;
+                        }
+                    })
+                    .attr("x1", function(d) { return 100 + ((((screen_width / 2) - 200)/(pcp_labels.length - 1))*i)})
+                    .attr("x2", function(d) { return 100 + ((((screen_width / 2) - 200)/(pcp_labels.length - 1))*(i+1))})
+                    .attr("y1", function(d) { 
+                        if (pcp_labels[i] !== 'state') {
+                            return (screen_height / 2) - 50 - ((screen_height / 2)-100) * (d[0] / max_data[i]);
+                        }
+                        else {
+                            return (screen_height / 2) - 50 - ((screen_height / 2)-100) * ((state_map[d[0]]-1) / 49);
+                        }
+                    })
+                    .attr("y2", function(d) { 
+                        if (pcp_labels[i+1] !== 'state') {
+                            return (screen_height / 2) - 50 - ((screen_height / 2)-100) * (d[1] / max_data[i+1]) ;
+                        }
+                        else {
+                            return (screen_height / 2) - 50 - ((screen_height / 2)-100) * ((state_map[d[1]]-1) / 49);
+                        }
+                    })
+                    .on("click", function(d,i) {
+                        if (cluster_of_interest != -1 && dashboard_data[i][column_of_interest] == cluster_of_interest) {
+                            cluster_of_interest = -1;
+                        }
+                        else {
+                            cluster_of_interest = dashboard_data[i][column_of_interest];
+                        }
+                        drawVisualizations(e);
+                    });
+                }
+
+                pcp.append('text')
+                    .text('Parallel Coordinates Plot')
+                    .attr("x", screen_width / 4)
+                    .attr("y", 25)
+                    .style("text-anchor", "middle")
+                    .style("font", "16px helvetica");
+
+                pcp.selectAll('text.pcp_label')
+                    .data(pcp_labels)
+                    .enter()
+                    .append('text')
+                    .attr("class", "pcp_label")
+                    .text(d => attr_to_name.get(d))
+                    .attr("x", (d,i) => 100 + ((((screen_width / 2) - 200)/(pcp_labels.length - 1))*i))
+                    .attr("y", (screen_height / 2) - 25)
+                    .style("text-anchor", "middle")
+                    .style("font", "12px helvetica")
+
+                let max_val = 0
+
+                let fips_mapping = {};
+
+                full_data.forEach((data) => {
+                    if (data['parent_count'] == num_of_parents && data['child_count'] == num_of_children) {
+                        if (divide_by_income == true) {
+                            max_val = Math.max(1, data[curr_attr] / (data['median_family_income'] * num_of_parents));
+                            fips_mapping[data['fips']] = data[curr_attr] / (data['median_family_income'] * num_of_parents);
+                        }
+                        else {
+                            max_val = Math.max(max_val, data[curr_attr]);
+                            fips_mapping[data['fips']] = data[curr_attr];
+                        }
+                    }
+                })
+
+                let unselected = d3.scaleLinear()
+                    .domain([0, max_val])
+                    .range(['#ffffff', '#0000ff']);
+
+                let selected = d3.scaleLinear()
+                    .domain([0, max_val])
+                    .range(['#ffffff', '#ff0000']);
+
+                let geoPath = d3.geoPath();
+
+                let map = d3.select("body").append("svg")
+                  .attr("width", screen_width / 2 - 50)
+                  .attr("height", screen_height / 2)
+
+                let legend_arr = []
+                for (let i = 0; i <= 200; i++) {
+                    legend_arr.push(i);
+                }
+
+                d3.json("https://d3js.org/us-10m.v2.json", function(error, data) {
+                  map.append("g")
+                    .selectAll("path")
+                    .data(topojson.feature(data, data.objects.counties).features)
+                    .enter()
+                    .append("path")
+                    .style("stroke", function(d, i){
+                        return "black";
+                    })
+                    .style("stroke-width", "0.5px")
+                    .attr("d", geoPath)
+                    .attr("transform", "scale(0.35) translate(400, 100)")
+                    .style("fill", function (d, i) {
+                      if (fips_mapping[d.id] == undefined) {
+                        return "#000000";
+                      }
+                      if (histo_of_interest != -1 && !histo_FIPS.has(d.id)) {
+                        return "#000000";
+                      }
+                      if (cluster_of_interest != -1 && full_data[i][column_of_interest] != cluster_of_interest) {
+                        return "#000000";
+                      }
+                      if (FIPS_of_interest.has(d.id)) {
+                        return selected(fips_mapping[d.id]);
+                      }
+                      else {
+                        return unselected(fips_mapping[d.id]);
+                      }
+                    })
+                    .on("mouseover", function (d,i) {
+                        if (!FIPS_of_interest.has(d.id) && fips_mapping[d.id] != undefined) {
+                            FIPS_of_interest.add(d.id);
+                            drawVisualizations(event);
+                        }
+                    })
+                    .on("mousedown", function(d,i) {
+                        let state = ''
+                        full_data.forEach((data) => {
+                            if (parseInt(data['fips']) == d.id) {
+                                state = data['state'];
+                            }
+                        })
+                        console.log(state);
+                        full_data.forEach((data) => {
+                            if (data['state'] == state && !FIPS_of_interest.has(parseInt(data['fips']))) {
+                                FIPS_of_interest.add(data['fips']);
+                            }
+                        });
+                        drawVisualizations(event);
+                    });
+
+                    map.append("text")
+                        .text(attr_to_name.get(curr_attr) + " across America")
+                        .attr("x", screen_width / 4)
+                        .attr("y", 25)
+                        .style("text-anchor", "middle")
+                        .style("font-family", "Arial")
+                        .style("fill", "white");
+                });
+
+                map.selectAll("rect")
+                    .data(legend_arr)
+                    .enter()
+                    .append("rect")
+                    .attr("x", 75)
+                    .attr("width", 10)
+                    .attr("y", function(d) {
+                        return 25+d;
+                    })
+                    .attr("height", 1)
+                    .attr("fill", function (d) {
+                        return "rgb(" + (d/200 * 255) + "," + (d/200 * 255) + ",255)";
+                    });
+
+                let y_legend = d3.scaleLinear()
+                                 .domain([0, max_val])
+                                 .range([200, 0])
+                
+                let y_legend_axis = d3.axisLeft() 
+                                      .scale(y_legend)
+                                      .ticks(10);
+
+                map.append("g")
+                    .attr("transform", "translate(75, 25)")
+                    .attr("class", "axis")
+                    .call(y_legend_axis);
+
+
+                let mds = d3.select("body")
+                            .append("svg")
+                            .attr("width", screen_width / 3)
+                            .attr("height", screen_height / 2)
+
+                let y = d3.scaleLinear()
+                                .domain([mds_min_y, mds_max_y])
+                                .range([(screen_height / 2) - 100, 0])
+
+                let y_axis = d3.axisLeft()
+                                .scale(y)
+                                .ticks(0);
+                
+                mds.append("g")
+                    .attr("transform", "translate(50, 50)")
+                    .attr("class", "axis")
+                    .call(y_axis);
+
+                let x = d3.scaleLinear()
+                            .domain([mds_min_x, mds_max_x])
+                            .range([0, screen_width / 3 - 100])
+
+                let x_axis = d3.axisBottom()
+                                .scale(x)
+                                .ticks(0);
+
+                mds.append("g")
+                    .attr("transform", "translate(50," + ((screen_height / 2) - 50) + ")")
+                    .attr("class", "axis")
+                    .call(x_axis);
+
+                mds.selectAll("dot")
+                    .data(dashboard_data)
+                    .enter()
+                    .append("circle")
+                    .attr("cx", function (d) {
+                        return 50 + (((screen_width / 3) - 100) * ((d['mds_x'] - mds_min_x) / (mds_max_x - mds_min_x)));
+                    })
+                    .attr("cy", function (d) {
+                        return ((screen_height / 2) - 50) - (((screen_height / 2) - 100) * ((d['mds_y'] - mds_min_y) / (mds_max_y - mds_min_y)));
+                    })
+                    .attr("r", 2)
+                    .attr("fill", function (d) {
+                        return color_wheel[d[column_of_interest]];
+                    })
+                    .attr("opacity", function(d,i) {
+                        if (cluster_of_interest != -1) {
+                            if (dashboard_data[i][column_of_interest] == cluster_of_interest) {
+                                return 1;
+                            }
+                            else {
+                                return 0.15;
+                            }
+                        }
+                        if (histo_of_interest != -1) {
+                            if (histo_FIPS.has(dashboard_data[i]['fips'])) {
+                                return 1;
+                            }
+                            else {
+                                return 0.15;
+                            }
+                        }
+                        else {
+                            if (FIPS_of_interest.size > 0 && !FIPS_of_interest.has(dashboard_data[i]['fips'])) {
+                                return 0.35;
+                            }
+                            return 1;
+                        }
+                    })
+                    .on("mouseover", function(d,i) {
+                        if (!FIPS_of_interest.has(d['fips'])) {
+                            FIPS_of_interest.add(d['fips']);
+                            drawVisualizations(event);
+                        }
+                    });
+
+                mds.append("text")
+                    .text("MDS Plot")
+                    .attr("x", screen_width / 6)
+                    .attr("y", 25)
+                    .style("text-anchor", "middle")
+                    .style("font-family", "Arial");
+
+
+                let curr_data = [];
+
+                full_data.forEach(datapoint => {
+                    if (datapoint['parent_count'] == num_of_parents && datapoint['child_count'] == num_of_children) {
+                        curr_data.push(datapoint[curr_name]);
+                    }
+                });
+
+                let data_width = (screen_width / 3) - 150;
+                let data_height = (screen_height / 2) - 100;
+
+                if (curr_name !== 'state') {
+                    data_max = Math.max(...curr_data);
+                    console.log(data_max);
+                    let histogram_data = Array(10).fill(0);
+                    let width = data_max / 10;
+
+                    curr_data.forEach(value => {
+                        let binIndex = Math.min(Math.floor(value / width), 9);
+                        histogram_data[binIndex] += 1;
+                    })
+
+                    let spectral_data = Array(10).fill(0);
+
+                    if (FIPS_of_interest.size > 0) {
+                        full_data.forEach(datapoint => {
+                            if (datapoint['parent_count'] == num_of_parents && datapoint['child_count'] == num_of_children && FIPS_of_interest.has(datapoint['fips'])) {
+                                let binIndex = Math.min(Math.floor(datapoint[curr_name] / width), 9);
+                                spectral_data[binIndex] += 1;
+                            }
+                        })
+                    }
+
+                    let full_histo_data = Array(10).fill(0);
+                    for (let i = 0; i < 10; i++) {
+                        full_histo_data[i] = histogram_data[i];
+                        histogram_data[i] = histogram_data[i] - spectral_data[i];
+                    }
+                    for (let i = 0; i < 10; i++) {}
+                    console.log(histogram_data);
+                    console.log(spectral_data);
+
+                    let freq_max = Math.max(...full_histo_data);
+
+                    let histogram = d3.select("body")
+                            .append("svg")
+                            .attr("width", screen_width / 3)
+                            .attr("height", screen_height / 2);
+
+                    histogram.selectAll("rect")
+                        .data(histogram_data)
+                        .enter()
+                        .append("rect")
+                        .attr("x", function(d, i) {
+                            return 75+(data_width/10)*i;
+                        })
+                        .attr("width", (data_width/10))
+                        .attr("y", function(d) {
+                            return 50 + data_height - (data_height * (d / freq_max));
+                        })
+                        .attr("height", function(d) {
+                            console.log(d);
+                            return data_height * (d / freq_max);
+                        })
+                        .attr("fill", function(d) {
+                            return "rgb(0," + (100 + Math.floor((d / freq_max) * 155)) +", 165)";
+                        })
+                        .attr("opacity", function(d, i) {
+                            if (histo_of_interest == -1 || histo_of_interest == i) {
+                                return 1;
+                            }
+                            else {
+                                return 0.15;
+                            }
+                        })
+                        .on("click", function(d,i) {
+                            if (i == histo_of_interest) {
+                                histo_of_interest = -1;
+                                histo_FIPS.clear();
+                            }
+                            else {
+                                histo_FIPS.clear();
+                                histo_of_interest = i;
+                                full_data.forEach((data) => {
+                                    if (data['parent_count'] == num_of_parents && data['child_count'] == num_of_children) {
+                                        let currBin = Math.min(Math.floor(data[curr_name] / width, 9));
+                                        if (currBin == histo_of_interest) {
+                                            histo_FIPS.add(data['fips']);
+                                        }
+                                    }
+                                })
+                            }
+                            drawVisualizations(e);
+                        });
+
+
+                    histogram.selectAll()
+                             .data(spectral_data)
+                             .enter()
+                             .append("rect")
+                             .attr("x", function(d,i) {
+                                return 75+(data_width/10)*i;
+                             })
+                             .attr("width", (data_width/10))
+                             .attr("y", function(d,i) {
+                                return 50 + data_height - (data_height * ((histogram_data[i] + d) / freq_max));
+                             })
+                             .attr("height", function(d) {
+                                return data_height * (d / freq_max);
+                             })
+                             .attr("fill", function(d,i) {
+                                return "rgb(0," + (100 + Math.floor((histogram_data[i] / freq_max) * 155)) +", 165)";
+                             })
+                             .attr("opacity", function(d, i) {
+                                if (histo_of_interest == -1 || histo_of_interest == i) {
+                                    return 0.35;
+                                }
+                                else {
+                                    return 0.05;
+                                }
+                             });
+
+                    let y_scale = d3.scaleLinear()
+                            .domain([0, freq_max])
+                            .range([data_height, 0]);
+
+                    let y_axis_ticks = [0];
+                    for (let i = 1; i < 11; i++) {
+                        y_axis_ticks.push(Math.floor(freq_max * i / 10));
+                    }
+
+                    let histo_y_axis = histogram.append("g")
+                                            .attr("transform", "translate(75,50)")
+                                            .attr("class", "axis")
+                                            .call(d3.axisLeft(y_scale).tickValues(y_axis_ticks));
+
+                    let x_scale = d3.scaleLinear()
+                                .domain([0, data_max])
+                                .range([0, data_width]);
+
+                    let x_axis_ticks = [0];
+                    for (let i = 1; i < 6; i++) {
+                        x_axis_ticks.push(Math.floor(data_max * i / 5));
+                    }
+
+                    let histo_x_axis = histogram.append("g")
+                                            .attr("transform", "translate(75," + (screen_height / 2 - 50) + ")")
+                                            .attr("class", "axis")
+                                            .call(d3.axisBottom(x_scale).tickValues(x_axis_ticks));
+
+                    histogram.append("text")
+                        .text(attr_to_name.get(curr_name))
+                        .attr("x", screen_width / 6)
+                        .attr("y", screen_height / 2 - 15)
+                        .style("text-anchor", "middle")
+                        .style("font-family", "Arial");
+
+                    histogram.append("text")
+                        .text("Frequency")
+                        .attr("transform", "rotate(-90) translate(-" + (screen_height / 4) + ", 25)")
+                        .style("text-anchor", "middle")
+                        .style("font-family", "Arial");
+
+                    histogram.append("text")
+                        .text("Histogram of " + attr_to_name.get(curr_name))
+                        .attr("x", screen_width / 6)
+                        .attr("y", 25)
+                        .style("text-anchor", "middle")
+                        .style("font-family", "Arial");
+                }
+                else {
+                    let barchart_data = new Map();
+                    curr_data.forEach(value => {
+                        if (barchart_data.has(value)) {
+                            barchart_data.set(value, barchart_data.get(value) + 1);
+                        }
+                        else {
+                            barchart_data.set(value, 1);
+                        }
+                    })
+
+                    let barchart_labels = [...barchart_data.keys()].reverse()
+                    let barchart_freqs = [...barchart_data.values()]
+
+                    let freq_max = Math.max(...barchart_freqs);
+                    let width = barchart_data.size;
+
+                    let bar_chart = d3.select("body")
+                            .append("svg")
+                            .attr("width", screen_width / 3)
+                            .attr("height", screen_height / 2);
+
+                    bar_chart.selectAll("rect")
+                        .data(barchart_freqs)
+                        .enter()
+                        .append("rect")
+                        .attr("x", function(d, i) {
+                            return 75+(data_width/width)*i + 3;
+                        })
+                        .attr("y", function(d) {
+                            return 50 + data_height - (data_height * (d / freq_max));
+                        })
+                        .attr("width", (data_width/width) - 3)
+                        .attr("height", function(d) {
+                            return data_height * (d / freq_max);
+                        })
+                        .attr("fill", function(d) {
+                            return "rgb(" + (100 + Math.floor((d / freq_max) * 155)) + ", 0, 0)";
+                        });
+
+                    let y_scale = d3.scaleLinear()
+                        .domain([0, freq_max])
+                        .range([data_height, 0]);
+
+                    let y_axis_ticks = [0];
+                    for (let i = 1; i < 11; i++) {
+                        y_axis_ticks.push(Math.floor(freq_max * i / 10));
+                    }
+
+                    let y_axis = bar_chart.append("g")
+                                            .attr("transform", "translate(75,50)")
+                                            .attr("class", "axis")
+                                            .call(d3.axisLeft(y_scale).tickValues(y_axis_ticks));
+
+                    let x_scale = d3.scalePoint()
+                            .domain(barchart_labels)
+                            .range([data_width - (data_width/width), 0]);
+
+                    let x_axis = bar_chart.append("g")
+                                    .attr("transform", "translate(" + (75 + (data_width/width)/2) + "," + (screen_width / 6) + ")")
+                                    .attr("class", "axis")
+                                    .call(d3.axisBottom(x_scale).tickValues(barchart_labels));
+
+                    bar_chart.append("text")
+                        .text(attr_to_name.get(curr_name))
+                        .attr("x", screen_width / 6)
+                        .attr("y", screen_height / 2 - 15)
+                        .style("text-anchor", "middle")
+                        .style("font-family", "Arial");
+
+                    bar_chart.append("text")
+                        .text("Frequency")
+                        .attr("transform", "rotate(-90) translate(-" + (screen_height / 4) + ", 25)")
+                        .style("text-anchor", "middle")
+                        .style("font-family", "Arial");
+
+                    bar_chart.append("text")
+                        .text("Bar chart of " + curr_name)
+                        .attr("x", screen_width / 6)
+                        .attr("y", 25)
+                        .style("text-anchor", "middle")
+                        .style("font-family", "Arial");
+                }
+
+                x_data = [];
+                dashboard_data.forEach((data) => {
+                    x_data.push(data[x_name]);
+                })
+                x_max = Math.max(...x_data);
+
+                y_data = [];
+                dashboard_data.forEach((data) => {
+                    y_data.push(data[y_name]);
+                })
+                y_max = Math.max(...y_data);
+
+                scatterplot_data = [];
+                for (let i = 0; i < x_data.length; i++) { 
+                    scatterplot_data.push([x_data[i], y_data[i]]);
+                }
+
+                x_idx_mapping = new Map();
+                y_idx_mapping = new Map();
+                x_values = [];
+                y_values = []
+                if (x_name == 'state') {
+                    x_data.forEach(value => {
+                        if (!x_idx_mapping.has(value)) {
+                            x_idx_mapping.set(value, x_idx_mapping.size);
+                            x_values.push(value);
+                        }
+                    })
+                }
+                if (y_name == 'state') {
+                    y_data.forEach(value => {
+                        if (!y_idx_mapping.has(value)) {
+                            y_idx_mapping.set(value, y_idx_mapping.size);
+                            y_values.push(value);
+                        }
+                    })
+                }
+
+                freq_mapping = new Map();
+                for (let i = 0; i < dashboard_data.length; i++) {
+                    let temp_str = dashboard_data[i][x_name] + '-' + dashboard_data[i][y_name];
+                    if (freq_mapping.has(temp_str)) {
+                        freq_mapping.set(temp_str, freq_mapping.get(temp_str) + 1);
+                    }
+                    else {
+                        freq_mapping.set(temp_str, 1);
+                    }
+                }
+
+                let scatterplot = d3.select("body")
+                            .append("svg")
+                            .attr("width", data_width+100)
+                            .attr("height", data_height+100);
+
+                scatterplot.selectAll("dot")
+                        .data(dashboard_data)
+                        .enter()
+                        .append("circle")
+                        .attr("r", function(d) {
+                            if (scaled) {
+                                let temp_str = d[0] + '-' + d[1];
+                                return Math.max(3, freq_mapping.get(temp_str) * 2 / 3);
+                            }
+                            else {
+                                return 3;
+                            }
+                        })
+                        .attr("cx", function(d) {
+                            if (x_name !== 'state') {
+                                return 75 + (data_width * (d[x_name] / x_max));
+                            }
+                            else {
+                                return 75 + (data_width * x_idx_mapping.get(d[x_name]) / (x_idx_mapping.size - 1));
+                            }
+                        })
+                        .attr("cy", function(d) {
+                            if (y_name !== 'state') {
+                                return 50 + data_height - (data_height * (d[y_name] / y_max));
+                            }
+                            else {
+                                return 50 + data_height - (data_height * y_idx_mapping.get(d[y_name]) / (y_idx_mapping.size - 1));
+                            }
+                        })
+                        .attr("opacity", function(d,i) {
+                            if (cluster_of_interest != -1) {
+                                if (d[column_of_interest] == cluster_of_interest) {
+                                    return 1;
+                                }
+                                else {
+                                    return 0.15;
+                                }
+                            }
+                            if (histo_of_interest != -1) {
+                                if (histo_FIPS.has(d['fips'])) {
+                                    return 1;
+                                }
+                                else {
+                                    return 0.15;
+                                }
+                            }
+                            else {
+                                if (FIPS_of_interest.size > 0 && !FIPS_of_interest.has(d['fips'])) {
+                                    return 0.05;
+                                }
+                                return 1;
+                            }
+                        })
+                        .attr("fill", function (d) {
+                            return color_wheel[d[column_of_interest]];
+                        })
+                        .on("mouseover", function(d,i) {
+                        if (!FIPS_of_interest.has(d['fips'])) {
+                            FIPS_of_interest.add(d['fips']);
+                            drawVisualizations(event);
+                        }
+                    });
+                
+                if (y_name !== 'state') {
+                    let y_scale = d3.scaleLinear()
+                            .domain([0, y_max])
+                            .range([data_height, 0]);
+
+                    let y_axis_ticks = [0];
+                    for (let i = 1; i < 11; i++) {
+                        y_axis_ticks.push(Math.floor(y_max * i / 10));
+                    }
+
+                    let y_axis = scatterplot.append("g")
+                                        .attr("transform", "translate(75, 50)")
+                                        .attr("class", "axis")
+                                        .call(d3.axisLeft(y_scale).tickValues(y_axis_ticks));
+                }
+                else {
+                    let y_scale = d3.scalePoint()
+                            .domain(y_values)
+                            .range([data_height, 0]);
+
+                    let y_axis = scatterplot.append("g")
+                                .attr("transform", "translate(75, 50)")
+                                .attr("class", "axis")  
+                                .call(d3.axisLeft(y_scale).tickValues(y_values));
+                }
+
+                if (x_name !== 'state') {
+                    let x_scale = d3.scaleLinear()
+                                .domain([0, x_max])
+                                .range([0, data_width]);
+
+                    let x_axis_ticks = [0];
+                    for (let i = 1; i < 6; i++) {
+                        x_axis_ticks.push(Math.floor(x_max * i / 5));
+                    }
+
+                    let x_axis = scatterplot.append("g")
+                                        .attr("transform", "translate(75," + ((screen_height / 2) - 50) + ")")
+                                        .attr("class", "axis")
+                                        .call(d3.axisBottom(x_scale).tickValues(x_axis_ticks));
+                }
+                else {
+                    let x_scale = d3.scalePoint()
+                                .domain(x_values)
+                                .range([0, data_width]);
+
+                    let x_axis = scatterplot.append("g")
+                            .attr("transform", "translate(75," + ((screen_height / 2) - 50) + ")")
+                            .attr("class", "axis")
+                            .call(d3.axisBottom(x_scale).tickValues(x_values));
+                }
+
+                scatterplot.append("text")
+                    .text("Scatterplot of " + attr_to_name.get(x_name) + " vs. " + attr_to_name.get(y_name))
+                    .attr("x", screen_width / 6)
+                    .attr("y", 25)
+                    .style("text-anchor", "middle")
+                    .style("font-family", "Arial");
+
+                scatterplot.append("text")
+                    .text(attr_to_name.get(y_name))
+                    .attr("transform", "rotate(-90) translate(-" + (screen_height / 4) + ", 25)")
+                    .style("text-anchor", "middle")
+                    .style("font-family", "Arial");
+
+                scatterplot.append("text")
+                    .text(attr_to_name.get(x_name))
+                    .attr("x", screen_width / 6)
+                    .attr("y", screen_height / 2 - 15)
+                    .style("text-anchor", "middle")
+                    .style("font-family", "Arial");
+
+                    d3.selectAll("text")
+                        .attr("fill", "white");
+
+            }
+
+            function reset(e) {
+                cluster_of_interest = -1;
+                FIPS_of_interest = new Set();
+                histo_of_interest = -1;
+                histo_FIPS = new Set();
+                drawVisualizations(e);
+            }
+
+            function changeChildren(e) {
+                num_of_children = document.getElementById("childslider").value;
+                document.getElementById("numChildren").innerHTML = num_of_children;
+                drawVisualizations(event);
+            }
+            function changeParents(e) {
+                num_of_parents = document.getElementById("parentslider").value;
+                document.getElementById("numParents").innerHTML = num_of_parents;
+                drawVisualizations(event);
+            }
+
+            function changeValues(e) {
+                let option_list = document.getElementById("attributes");
+                let selection = option_list.options[option_list.selectedIndex].value;
+                let radio_buttons = document.getElementsByName("visualization");
+                let visualization = '';
+                for (let i = 0; i < radio_buttons.length; i++) {
+                    if (radio_buttons[i].checked) visualization = radio_buttons[i].id;
+                }
+                console.log(visualization);
+                console.log(selection);
+                if (visualization == 'PCP') {
+                    pcp_labels.push(selection);
+                    max_data.push(0);
+                }
+                else if (visualization == 'Map') {
+                    curr_attr = selection;
+                }
+                else if (visualization == 'Histogram') {
+                    curr_name = selection;
+                }
+                else {
+                    let scatter_radio = document.getElementsByName("scatter");
+                    let x = '';
+                    for (let i = 0; i < scatter_radio.length; i++) {
+                        if (scatter_radio[i].checked) x = scatter_radio[i].id;
+                    }
+                    if (x == 'X') {
+                        x_name = selection;
+                    }
+                    else {
+                        y_name = selection;
+                    }
+                }
+                drawVisualizations(event);
+            }
+
+            function changeDivide(event) {
+                divide_by_income = !divide_by_income;
+                drawVisualizations(event);
+            }
+
+            function loaddata(e) {
+                Promise.all([
+                fetch('http://127.0.0.1:5000/dashboarddata')
+                .then(response => response.json())
+                .then(data => {
+                    const jsonData = JSON.parse(data);
+                    dashboard_data = jsonData;
+                })
+                .catch(error => console.error('Error:', error)),
+
+                fetch('http://127.0.0.1:5000/fulldata')
+                .then(response => response.json())
+                .then(data => {
+                    const jsonData = JSON.parse(data);
+                    full_data = jsonData;
+                })
+                .catch(error => console.error('Error:', error))
+                ]).then(() => {
+                    drawVisualizations(event);
+                })
+            }
+        </script>
+    </body>
+</html>
